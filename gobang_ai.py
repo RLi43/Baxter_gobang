@@ -3,13 +3,10 @@
 import sys, time
 import rospy
 from std_msgs.msg import Int16MultiArray,Char
-#import roslib;roslib.load_manifest('gobang')  
 from gobang.msg import ChessMove
-#import ChessMove
 
 myturn = False # 轮到AI下棋
 DEPTH = 1 # 简单/困难
-#global myturn,DEPTH
 
 #----------------------------------------------------------------------
 # chessboard: 棋盘类，简单从字符串加载棋局或者导出字符串，判断输赢等
@@ -747,12 +744,12 @@ def next_step(human_move):
     if state is not 'Q' and state is not 'U':
         row_h = human_move.row
         col_h = human_move.col
-        print row_h,col_h
+        print 'human move:',row_h,col_h
+        # row from up, col from left
 #----------------------------------------------------------------------
 # main game
 #----------------------------------------------------------------------
 def gamemain():
-    #global state
     print 'a new game!'
     b = chessboard()
     s = searcher()
@@ -781,16 +778,13 @@ def gamemain():
     # 设置难度
     DEPTH = 1
 
-    # if len(sys.argv) > 1:
-    #     if sys.argv[1].lower() == 'hard':
-    #         DEPTH = 2
-
     ##------------------
     ## ROS
     ##------------------
     rospy.init_node("gobang_ai")
     ai_posi = rospy.Publisher('posi/ai',Int16MultiArray,queue_size=10)
-    ai_state = rospy.Publisher('ai_state',Char,queue_size=10) #H - wait for human, T - thinking, M - moving(by arm), W - ai win, L - ai lose
+    ai_state = rospy.Publisher('ai_state',Char,queue_size=10) 
+    #H - wait for human, T - thinking, M - moving(by arm), W - ai win, L - ai lose
     rospy.Subscriber('posi/human',ChessMove,next_step) #TODO
     # Chess state: n/N - normal; u/U - undo; q/Q quit; h/H hard; e/E easy
     while 1:
@@ -801,7 +795,6 @@ def gamemain():
             b.show()
             print 'Your move (u:undo, q:quit, e:easy, h:hard):'
             ai_state.publish(ord('H'))
-            # 
             global myturn,state
             while not myturn and not rospy.is_shutdown():
                 pass
@@ -811,16 +804,16 @@ def gamemain():
             if state == 'H':
                 DEPTH = 2
                 continue
-            if state == 'E':
+            elif state == 'E':
                 DEPTH = 1
                 continue
-            if state == 'U':
+            elif state == 'U':
                 undo = True
                 break
-            if state == 'Q':
+            elif state == 'Q':
                 print b.dumps()
                 return 0
-            if state == 'N':
+            elif state == 'N':
                 if row_h>=0 and row_h<15 and col_h>=0 and col_h<15:
                     if b[row_h][col_h] == 0:
                         break
@@ -828,27 +821,8 @@ def gamemain():
                         print 'can not move!'
                 else:
                     print 'invalid positon!'
+                # TODO give a feedback? 
 
-            # text = raw_input().strip('\r\n\t ')
-            # 取消了检验
-            # if len(text) == 2:
-            #     tr = ord(text[0].upper()) - ord('A')
-            #     tc = ord(text[1].upper()) - ord('A')
-            #     if tr >= 0 and tc >= 0 and tr < 15 and tc < 15:
-            #         if b[tr][tc] == 0:
-            #             row, col = tr, tc
-            #             break
-            #         else:
-            #             print 'can not move there'
-            #     else:
-            #         print 'bad position'
-            
-            # elif text.upper() == 'U':
-            #     undo = True
-            #     break
-            # elif text.upper() == 'Q':
-            #     print b.dumps()
-            #     return 0
         ai_state.publish(ord('T'))
         if undo == True:
             undo = False
