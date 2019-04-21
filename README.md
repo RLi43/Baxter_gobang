@@ -5,4 +5,4 @@ Baxter robot play the gobang with human. #CV#gobang#Baxter
 * posi/ai
 * ai_state - waiting/thinking/win/lose - for face photos
 ## referrence
-(gobang AI)[https://github.com/skywind3000/gobang]
+[gobang AI](https://github.com/skywind3000/gobang)
