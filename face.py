@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 import os
 import sys
 import argparse
@@ -6,6 +8,7 @@ import rospy
 
 import cv2
 import cv_bridge
+import numpy as np
 
 from sensor_msgs.msg import (
     Image,
@@ -35,18 +38,20 @@ def show_image(state):
 #     pub.publish(msg)
 #     # Sleep to allow for image to be published.
 #     rospy.sleep(1)
+def load(name):
+    return cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('img/'+name+'.jpg'), encoding="bgr8")
 
 def main():
     global state
     state = 1
     imgs = {
-        'open_eyes':cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('open.jpg'), encoding="bgr8"),
-        'close_eyes':cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('close.jpg'), encoding="bgr8"),
-        'think':cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('think.jpg'),encoding="bgr8"),
-        'search':cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('search.jpg'),encoding="bgr8"),
-        'win':cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('win.jpg'),encoding="bgr8"),
-        'lose':cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('lose.jpg'),encoding="bgr8"),
-        'motion':cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('motion.jpg'),encoding="bgr8")
+        'open_eyes':load('open'),
+        'close_eyes':load('close'),
+        'think':load('think'),
+        'search':load('search'),
+        'win':load('win'),
+        'lose':load('lose'),
+        'motion':load('motion')
     }
     rospy.init_node('baxter_emotion', anonymous=True)
     rospy.Subscriber('ai_state',Char,cb_face)
@@ -58,7 +63,7 @@ def main():
     time_last = time.time()
     while not rospy.on_shutdown():
         if old_state == state:
-            if state == 1 or state == 12:
+            if (state == 1 or state == 12):
                 #眨眼 
                 #TODO 做眼神什么的 感觉更智能了呢
                 if time.time()-time_last >= winkle_delay:
@@ -70,7 +75,7 @@ def main():
             continue
         else:
             old_state = state
-            if state == 1 or state == 12
+            if state == 1 or state == 12:
                 pub.publish(imgs['wait'])
             elif state == 2:
                 pub.publish(imgs['think'])

@@ -5,8 +5,6 @@ import rospy
 from std_msgs.msg import Int16MultiArray,Char
 from gobang.msg import ChessMove
 
-myturn = False # 轮到AI下棋
-DEPTH = 1 # 简单/困难
 
 #----------------------------------------------------------------------
 # chessboard: 棋盘类，简单从字符串加载棋局或者导出字符串，判断输赢等
@@ -736,132 +734,138 @@ def psyco_speedup ():
 
 psyco_speedup()
 
-def next_step(human_move):
-    global state,row_h,col_h,myturn
-    myturn = True    
-    print human_move
-    state = chr(ord('A') + human_move.state).upper()
-    if state is not 'Q' and state is not 'U':
-        row_h = human_move.row
-        col_h = human_move.col
-        print 'human move:',row_h,col_h
-        # row from up, col from left
 #----------------------------------------------------------------------
 # main game
 #----------------------------------------------------------------------
-def gamemain():s
-    print 'a new game!'
-    b = chessboard()
-    s = searcher()
-    s.board = b.board()
 
-    # 不需要初始棋盘
-    # opening = [
-    #     '1:HH 2:II',
-    #     #'2:IG 2:GI 1:HH',
-    #     '1:IH 2:GI',
-    #     '1:HG 2:HI',
-    #     #'2:HG 2:HI 1:HH',
-    #     #'1:HH 2:IH 2:GI',
-    #     #'1:HH 2:IH 2:HI',
-    #     #'1:HH 2:IH 2:HJ',
-    #     #'1:HG 2:HH 2:HI',
-    #     #'1:GH 2:HH 2:HI',
-    # ]
-    # import random
-    # openid = random.randint(0, len(opening) - 1)
-    # b.loads(opening[openid])
-    turn = 2
-    history = []
-    undo = False
+class gamemain():
+    def next_step(self,human_move):
+        print human_move
+        self.state = chr(human_move.state).upper()
+        print 'state:',self.state
+        if self.state is not 'Q' and self.state is not 'U':
+            self.row_h = human_move.row
+            self.col_h = human_move.col
+            print 'human move:',self.row_h,self.col_h
+        self.myturn = True    
+            # row from up, col from left
+    def __init__(self):
+        self.row_h = 5
+        self.col_h = 5
+        self.state = 'Q'
+        self.myturn = False
+        self.DEPTH = 1
+    def go(self):
+        print 'a new game!'
+        b = chessboard()
+        s = searcher()
+        s.board = b.board()
 
-    # 设置难度
-    DEPTH = 1
+        # 不需要初始棋盘
+        # opening = [
+        #     '1:HH 2:II',
+        #     #'2:IG 2:GI 1:HH',
+        #     '1:IH 2:GI',
+        #     '1:HG 2:HI',
+        #     #'2:HG 2:HI 1:HH',
+        #     #'1:HH 2:IH 2:GI',
+        #     #'1:HH 2:IH 2:HI',
+        #     #'1:HH 2:IH 2:HJ',
+        #     #'1:HG 2:HH 2:HI',
+        #     #'1:GH 2:HH 2:HI',
+        # ]
+        # import random
+        # openid = random.randint(0, len(opening) - 1)
+        # b.loads(opening[openid])
+        turn = 2
+        history = []
+        undo = False
 
-    ##------------------
-    ## ROS
-    ##------------------
-    rospy.init_node("gobang_ai")
-    ai_posi = rospy.Publisher('posi/ai',Int16MultiArray,queue_size=10)
-    ai_state = rospy.Publisher('ai_state',Char,queue_size=10) 
-    #H - wait for human, T - thinking, M - moving(by arm), W - ai win, L - ai lose
-    rospy.Subscriber('posi/human',ChessMove,next_step) #TODO
-    # Chess state: n/N - normal; u/U - undo; q/Q quit; h/H hard; e/E easy
-    while 1:
-        print ''
-        global row_h,col_h
-        while 1:
-            print '<ROUND %d>'%(len(history) + 1)
-            b.show()
-            print 'Your move (u:undo, q:quit, e:easy, h:hard):'
-            ai_state.publish(1)
-            global myturn,state
-            while not myturn and not rospy.is_shutdown():
-                pass
-            if rospy.is_shutdown():
-                return 0
-            myturn = False
-            if state == 'H':
-                DEPTH = 2
-                continue
-            elif state == 'E':
-                DEPTH = 1
-                continue
-            elif state == 'U':
-                undo = True
-                break
-            elif state == 'Q':
-                print b.dumps()
-                return 0
-            elif state == 'N':
-                if row_h>=0 and row_h<15 and col_h>=0 and col_h<15:
-                    if b[row_h][col_h] == 0:
-                        break
+        ##------------------
+        ## ROS
+        ##------------------
+        rospy.init_node("gobang_ai")
+        ai_posi = rospy.Publisher('posi/ai',Int16MultiArray,queue_size=10)
+        ai_state = rospy.Publisher('ai_state',Char,queue_size=10) 
+        #H - wait for human, T - thinking, M - moving(by arm), W - ai win, L - ai lose
+        rospy.Subscriber('posi/human',ChessMove,self.next_step) #TODO
+        # Chess state: n/N - normal; u/U - undo; q/Q quit; h/H hard; e/E easy
+        while not rospy.is_shutdown():
+            print ''
+            while not rospy.is_shutdown():
+                print '<ROUND %d>'%(len(history) + 1)
+                b.show()
+                print 'Your move (u:undo, q:quit, e:easy, h:hard):'
+                ai_state.publish(1)
+                #global myturn,state
+                while not self.myturn and not rospy.is_shutdown():
+                    pass
+                if rospy.is_shutdown():
+                    return 0
+                self.myturn = False
+                print 'self.state',self.state
+                if self.state == 'H':
+                    self.DEPTH = 2
+                    continue
+                elif self.state == 'E':
+                    self.DEPTH = 1
+                    continue
+                elif self.state == 'U':
+                    undo = True
+                    break
+                elif self.state == 'Q':
+                    print b.dumps()
+                    return 0
+                elif self.state == 'N':
+                    if self.row_h>=0 and self.row_h<15 and self.col_h>=0 and self.col_h<15:
+                        if b[self.row_h][self.col_h] == 0:
+                            break
+                        else:
+                            print 'can not move!'
                     else:
-                        print 'can not move!'
+                        print 'invalid positon!'
+                    # TODO give a feedback? 
+
+            ai_state.publish(2)
+            if undo == True:
+                undo = False
+                if len(history) == 0:
+                    print 'no history to undo'
                 else:
-                    print 'invalid positon!'
-                # TODO give a feedback? 
-
-        ai_state.publish(2)
-        if undo == True:
-            undo = False
-            if len(history) == 0:
-                print 'no history to undo'
+                    print 'rollback from history ...'
+                    move = history.pop()
+                    b.loads(move)
             else:
-                print 'rollback from history ...'
-                move = history.pop()
-                b.loads(move)
-        else:
-            history.append(b.dumps())
-            b[row_h][col_h] = 1
+                history.append(b.dumps())
+                b[self.row_h][self.col_h] = 1
 
-            if b.check() == 1:
-                b.show()
-                print b.dumps()
-                print ''
-                print 'YOU WIN !!'
-                ai_state.publish(13)
-                return 0
+                if b.check() == 1:
+                    b.show()
+                    print b.dumps()
+                    print ''
+                    print 'YOU WIN !!'
+                    ai_state.publish(13)
+                    return 0
 
-            print 'robot is thinking now ...'
-            score, row, col = s.search(2, DEPTH)
-            cord = '%s%s'%(chr(ord('A') + row), chr(ord('A') + col))
-            print 'robot move to %s (%d)'%(cord, score)
-            b[row][col] = 2
-            ai_p = Int16MultiArray()
-            ai_p.data=[row,col]
-            ai_posi.publish(ai_p)
+                print 'robot is thinking now ...'
+                score, row, col = s.search(2, self.DEPTH)
+                cord = '%s%s'%(chr(ord('A') + row), chr(ord('A') + col))
+                print 'robot move to %s (%d)'%(cord, score)
+                b[row][col] = 2
+                ai_p = Int16MultiArray()
+                ai_p.data=[row,col]
+                ai_posi.publish(ai_p)
 
-            if b.check() == 2:
-                b.show()
-                print b.dumps()
-                print ''
-                print 'YOU LOSE.'
-                ai_state.publish(12)
-                return 0
+                if b.check() == 2:
+                    b.show()
+                    print b.dumps()
+                    print ''
+                    print 'YOU LOSE.'
+                    ai_state.publish(12)
+                    return 0
+        return 0
 
-    return 0
+
 
 
 #----------------------------------------------------------------------
@@ -969,9 +973,7 @@ if __name__ == '__main__':
     #             return 0
     #     return 0
     #test6()
-    global state,row_h,col_h
-    row_h = 0
-    col_h = 0
+    # global state,row_h,col_h
     while not rospy.is_shutdown():
-        state = 'N'
-        gamemain()
+        game = gamemain()
+        game.go()
