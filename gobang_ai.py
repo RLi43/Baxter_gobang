@@ -749,7 +749,7 @@ def next_step(human_move):
 #----------------------------------------------------------------------
 # main game
 #----------------------------------------------------------------------
-def gamemain():
+def gamemain():s
     print 'a new game!'
     b = chessboard()
     s = searcher()
@@ -794,7 +794,7 @@ def gamemain():
             print '<ROUND %d>'%(len(history) + 1)
             b.show()
             print 'Your move (u:undo, q:quit, e:easy, h:hard):'
-            ai_state.publish(ord('H'))
+            ai_state.publish(1)
             global myturn,state
             while not myturn and not rospy.is_shutdown():
                 pass
@@ -823,7 +823,7 @@ def gamemain():
                     print 'invalid positon!'
                 # TODO give a feedback? 
 
-        ai_state.publish(ord('T'))
+        ai_state.publish(2)
         if undo == True:
             undo = False
             if len(history) == 0:
@@ -841,7 +841,7 @@ def gamemain():
                 print b.dumps()
                 print ''
                 print 'YOU WIN !!'
-                ai_state.publish(ord('L'))
+                ai_state.publish(13)
                 return 0
 
             print 'robot is thinking now ...'
@@ -858,7 +858,7 @@ def gamemain():
                 print b.dumps()
                 print ''
                 print 'YOU LOSE.'
-                ai_state.publish(ord('W'))
+                ai_state.publish(12)
                 return 0
 
     return 0
