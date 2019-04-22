@@ -42,6 +42,19 @@ import baxter_interface
 from baxter_interface.camera import CameraController
 from gobang.msg import ChessBoard
 
+def rotate_z(ori,angle):
+    # qr = [cos(a/2),sin(a/2)*[0,0,1]]
+    #[w1 v2][w1 v2] = [wqw2-v1v2,w1v2+w2v1+v2*v1]
+    #https://www.cnblogs.com/mengdd/p/3238223.html
+    q = [ori.w,ori.x,ori.y,ori.z]
+    ca = math.cos(angle)
+    sa = math.sin(angle)
+    rs = Quaternion(w = q[0]*ca-q[3]*sa, 
+                    x = q[1]*ca-q[2]*sa, 
+                    y = q[2]*ca+q[1]*sa, 
+                    z = q[3]*ca+q[0]*sa)
+
+
 #https://blog.csdn.net/hey_chaoxia/article/details/81914729 
 class image_converter:
     def __init__(self,name):
@@ -58,6 +71,7 @@ class image_converter:
     def open_cam(self,on = True):
         #打开相机
         if on:
+            #TODO 考虑把头上的关掉
             self._camcon.resolution = self._resolution
             self._camcon.open()
         else:
@@ -81,49 +95,42 @@ class image_converter:
         upper_color = np.array(self._color_dict[color][1])
         # Threshold the HSV image to get only blue colors
         mask = cv2.inRange(hsv, lower_color, upper_color)   #在hsv颜色空间中获取图像中的颜色部分，用inRange制作掩膜，即该部分为感兴趣的部分 
-        # Bitwise-AND mask and original image
         res = cv2.bitwise_and(original, original, mask= mask)  #原图像与掩膜进行与操作，则只剩下掩膜部分
-        #腐蚀操作
+        #开操作
+        # kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8)) #
+        # open_img = cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (8, 8)) #获得构造元素
         open_img = cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel)
- 
+        # 二值化 
         gray_img = cv2.cvtColor(open_img, cv2.COLOR_BGR2GRAY)
         ret, self._bin_img = cv2.threshold(gray_img, 10, 255, cv2.THRESH_BINARY)
-        #cv2.imshow("原图",self._original_image)
-        #cv2.imshow("二值化",self._bin_img)
 
         #TODO 计算偏移 还需验证……
-        # rect = cv2.minAreaRect(self._bin_img)
-        # box = cv2.cv.BoxPoints(rect)
-        # box = np.int0(box)
-        # cv2.drawContours(img_show, [box], 0, (0, 0, 255), 2)
         contours, hierarchy = cv2.findContours(self._bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         x=None
-        [bx,by,bw,bh]=[0]*4
+        [bx,by,bw,bh,ba]=[0]*5
         best = 1000
+        scale = 0.0007 # per pixel #TODO by resolution and height
         for c in contours:
             # find bounding box coordinates
-            # 现计算出一个简单的边界框
-            x, y, w, h = cv2.boundingRect(c)
-            #TODO 找一个最近的
-            now = abs(x-self._resolution[0])+abs(y-self._resolution[1])
+            # x, y, w, h = cv2.boundingRect(c)            
+            rect = cv2.minAreaRect(self._bin_img)            
+            x, y = rect[0] # 中心坐标
+            w, h = rect[1]]# 长宽,总有 width>=height
+            angle = rect[2]  # 角度:[-90,0)            
+            now = abs(x-self._resolution[0]-self._pick_bias[0]/scale)+abs(y-self._resolution[1]+self._pick_bias[1]/scale)
             if now<best:
-                [bx,by,bw,bh,best]= [x,y,w,h,now]
-                # bx = x
-                # by = y
-                # bw = w
-                # bh = h
-                #best = now
-            # 画出矩形
-            cv2.rectangle(original, (x,y), (x+w, y+h), (0, 255, 0), 2)
-        # original = original.clone()
+                [bx,by,bw,bh,ba,best]= [x,y,w,h,angle,now]
+        original = original.clone()
+        box = cv2.boxPoints(rect)   
+        box =np.int0(box)#int32 / int64
+        cv2.drawContours(original, [box], 0, (0, 0, 255), 3)  # 画出该矩形
         # cv2.rectangle(original, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        print bx,by,bw,bh
+        print bx,by,bw,bh,ba
         cv2.imshow("Searched", original)
-        cv2.waitKey(1000)
-        scale = 0.0007 # per pixel
-        if x:
-            return [(bx+bw/2-self._resolution[0]/2)*scale-self._pick_bias[0],-(by+bh/2-self._resolution[1]/2)*scale-self._pick_bias[1]]
+        cv2.waitKey(500)
+        if len(contours)>0:
+            return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],-(by-self._resolution[1]/2)*scale-self._pick_bias[1],abs(max(ba,-90-ba))]
         else:
             sys.exit()
             #return [self._MAX_SCALE+1,self._MAX_SCALE+1]
@@ -217,7 +224,7 @@ class PickAndPlace(object):
     def _guarded_move_to_joint_position(self, joint_angles,fast):
         if joint_angles:
             if fast:
-                self._limb.move_to_joint_positions(joint_angles,timeout = 1.8)
+                self._limb.move_to_joint_positions(joint_angles,timeout = 1.0)
             else:
                 self._limb.move_to_joint_positions(joint_angles)
         else:
@@ -257,11 +264,11 @@ class PickAndPlace(object):
         ik_pose.orientation.w = current_pose['orientation'].w
         joint_angles = self.ik_request(ik_pose)
         # servo up from current pose
-        self._guarded_move_to_joint_position(joint_angles,False)
-    def _servo_to_pose(self, pose):
+        self._guarded_move_to_joint_position(joint_angles,up)
+    def _servo_to_pose(self, pose,quick=False):
         # servo down to release
         joint_angles = self.ik_request(pose)
-        self._guarded_move_to_joint_position(joint_angles,False)
+        self._guarded_move_to_joint_position(joint_angles,quick)
     def _pick(self, pose):
         # open the gripper
         self.gripper_open()
@@ -275,28 +282,28 @@ class PickAndPlace(object):
         self._vertical()
     def pick(self):       
         self._image_processor.open_cam()
+        self.gripper_open()
         self.statepub.publish(3)   
         self.move_to_wait()   
         self.statepub.publish(4)  
-
         print 'searching chess ...'
-        #TODO searching   
+        #wait power on
         rospy.sleep(8)
-        [bias_x,bias_y] = self._image_processor._image_process() #m
-        rospy.sleep(2)
-        print bias_x,bias_y
+        [bias_x,bias_y,bias_angle] = self._image_processor._image_process() #m
+        print bias_x,bias_y,bias_angle
         while abs(bias_x)>self._image_processor._MAX_SCALE:
             #TODO can't find
             pass
-        # In Scale!
-        while abs(bias_x)>0.003 or abs(bias_y)>0.003:
+        # 细微调整
+        while abs(bias_x)>0.003 or abs(bias_y)>0.003 or bias_angle > 5:
             current_pose = self._limb.endpoint_pose()
-            _x = current_pose['position'].x
-            _y = current_pose['position'].y
-            self._approach(self.posi2pose(_x+bias_y,_y-bias_x,self._board_cfg._height),True) # need quick shutdown to keep images still
+            current_pose['position'].x = current_pose['position'].x+bias_y
+            current_pose['position'].y = current_pose['position'].y-bias_x
+            current_pose['orientation'] = rotate_z(current_pose['orientation'],bias_angle)
+            self._servo_to_pose(current_pose,True) # need quick shutdown to keep images still
             rospy.sleep(0.2) # wait to move
-            [bias_x,bias_y] = self._image_processor._image_process()
-            print bias_x,bias_y
+            [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
+            print bias_x,bias_y,bias_angle
             if rospy.is_shutdown():
                 return 0
         #self._image_processor.open_cam(False)
@@ -323,8 +330,13 @@ class PickAndPlace(object):
         print row,col,x,y    
         self.statepub.publish(6)    
         print 'placing the chess...'
-        #TODO 考虑棋子的角度
-        self.__place__(self.posi2pose(x,y,self._board_cfg._height))  
+        # 考虑棋盘的角度
+        pose = self._limb.endpoint_pose()
+        pose['position'].x = x
+        pose['position'].y = y
+        pose['position'].z = self._board_cfg._height
+        pose['orientation'] = rotate_z(self._quat,self._board_cfg._bt)
+        self.__place__(pose)
         self.statepub.publish(8) 
         print 'moving to wait...'   
         self.move_to_wait()  
