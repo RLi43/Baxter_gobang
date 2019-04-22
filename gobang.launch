@@ -1,0 +1,20 @@
+<launch>
+#参数
+	<!arg name="limb" default="right"/>
+	<!arg name="world_name" default="new_world"/>
+	#use in .launch:
+	#$(arg arg_name) 
+	#set arg like:
+	#roslaunch XXX.launch arg1:=false world_name:=myworld
+#include
+	<!include file="gobang"/>
+	<!include file="$(find package_name)/XXX/XXX"/>
+	#传参
+	<!arg name="arg_in_XXX" value="$(arg limb)"/>
+	
+        <node pkg="gobang" name="arm_controller" type="controller.py" respawn="true"/>
+        <node pkg="gobang" name="gobang_ai" type="gobang_ai.py" output="screen" respawn="true"/>
+        <node pkg="gobang" name="face_pic" type="face.py" respawn="true"/>
+
+# roslaunch运行的nodes的标准输出会重定向到log file ~/.ros/log/run_id/node_name-number-stdout.log
+    </launch>

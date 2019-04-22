@@ -5,6 +5,8 @@ import rospy
 from std_msgs.msg import Int16MultiArray,Char
 from gobang.msg import ChessMove
 
+#--------------------------------------------------------------
+# 以下策略代码来自参考，无需改动，主函数在最后100~200行
 
 #----------------------------------------------------------------------
 # chessboard: 棋盘类，简单从字符串加载棋局或者导出字符串，判断输赢等
@@ -734,6 +736,9 @@ def psyco_speedup ():
 
 psyco_speedup()
 
+# end of 计算代码来自参考
+#-------------------------------------------------------
+
 #----------------------------------------------------------------------
 # main game
 #----------------------------------------------------------------------
@@ -787,8 +792,7 @@ class gamemain():
         rospy.init_node("gobang_ai")
         ai_posi = rospy.Publisher('posi/ai',Int16MultiArray,queue_size=10)
         ai_state = rospy.Publisher('ai_state',Char,queue_size=10) 
-        #H - wait for human, T - thinking, M - moving(by arm), W - ai win, L - ai lose
-        rospy.Subscriber('posi/human',ChessMove,self.next_step) #TODO
+        rospy.Subscriber('posi/human',ChessMove,self.next_step) 
         # Chess state: n/N - normal; u/U - undo; q/Q quit; h/H hard; e/E easy
         while not rospy.is_shutdown():
             print ''
@@ -821,9 +825,9 @@ class gamemain():
                         if b[self.row_h][self.col_h] == 0:
                             break
                         else:
-                            print 'can not move!'
+                            print 'ERROR!! can not move!'
                     else:
-                        print 'invalid positon!'
+                        print 'ERROR!! invalid positon!'
                     # TODO give a feedback? 
 
             ai_state.publish(2)
@@ -838,7 +842,7 @@ class gamemain():
             else:
                 history.append(b.dumps())
                 b[self.row_h][self.col_h] = 1
-
+                # 人类胜利
                 if b.check() == 1:
                     b.show()
                     print b.dumps()
@@ -846,7 +850,7 @@ class gamemain():
                     print 'YOU WIN !!'
                     ai_state.publish(13)
                     return 0
-
+                # 继续棋局
                 print 'robot is thinking now ...'
                 score, row, col = s.search(2, self.DEPTH)
                 cord = '%s%s'%(chr(ord('A') + row), chr(ord('A') + col))
@@ -855,7 +859,7 @@ class gamemain():
                 ai_p = Int16MultiArray()
                 ai_p.data=[row,col]
                 ai_posi.publish(ai_p)
-
+                # AI胜利
                 if b.check() == 2:
                     b.show()
                     print b.dumps()

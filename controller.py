@@ -8,12 +8,12 @@ import argparse
 import struct
 import sys
 import copy
+import random
 
 import rospy
 import rospkg
 
 import cv2
-#import cv2.cv as cv
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
 import numpy as np
@@ -37,15 +37,16 @@ from baxter_core_msgs.srv import (
     SolvePositionIKRequest,
     ListCameras
 )
-
 import baxter_interface
+# custom message
 from baxter_interface.camera import CameraController
 from gobang.msg import ChessBoard
 
+# 四元数乘法，绕z轴旋转
 def rotate_z(ori,angle):
     # qr = [cos(a/2),sin(a/2)*[0,0,1]]
     #[w1 v2][w1 v2] = [wqw2-v1v2,w1v2+w2v1+v2*v1]
-    #https://www.cnblogs.com/mengdd/p/3238223.html
+    # 原理 https://www.cnblogs.com/mengdd/p/3238223.html
     q = [ori.w,ori.x,ori.y,ori.z]
     ca = math.cos(angle)
     sa = math.sin(angle)
@@ -55,23 +56,21 @@ def rotate_z(ori,angle):
                     z = q[3]*ca+q[0]*sa)
 
 
-#https://blog.csdn.net/hey_chaoxia/article/details/81914729 
+# 参考：https://blog.csdn.net/hey_chaoxia/article/details/81914729 
 class image_converter:
     def __init__(self,name):
         self._camcon = baxter_interface.CameraController(name+'_hand_camera')
-        self._resolution = (480,300) #1280x800,960x600,640x400,480x300,384x240
+        self._resolution = (480,300) #可选的分辨率 1280x800,960x600,640x400,480x300,384x240
         self._image_sub = rospy.Subscriber('/cameras/'+name+'_hand_camera/image', Image, self._image_callback)
         self._original_image = None #从相机获取的原始图像(opencv格式) 
-        self._bin_img = None    #经过处理后的二值图像 
-        self._MAX_SCALE = 100 # 找不到就返回更大的值
+        self._MAX_SCALE = 100       # 找不到棋子就返回更大的值
         self._pick_bias = (0.025,0.03) # the gripper is not at the center of the camera
-        self._bias_x = 0
-        self._bias_y = 0
-        self._color_dict = {'blue':[[90,50,40],[130,220,100]]} #颜色在HSV空间中的上下阈值 [90,130,30],[130,200,150]
+        # 颜色在HSV空间中的上下阈值 蓝色：[90,130,30],[130,200,150]
+        self._color_dict = {'blue':[[90,50,40],[130,220,100]]} 
     def open_cam(self,on = True):
         #打开相机
         if on:
-            #TODO 考虑把头上的关掉
+            #TODO 考虑把头上的关掉，可能有占用的问题 Baxter只允许同时开两个
             self._camcon.resolution = self._resolution
             self._camcon.open()
         else:
@@ -81,13 +80,15 @@ class image_converter:
     def _image_callback(self, img_data):
         try:
             self._original_image = CvBridge().imgmsg_to_cv2(img_data, "bgr8") #从ros image转换到openCV的图像格式
-            #print 'get image'
         except CvBridgeError as e:
             print e
-    # 对图像的初步处理步骤如下：转换到HSV图像空间（HSV空间更容易分辨颜色）-->提取图像中的蓝色部分-->腐蚀与膨胀去除噪点-->转换为灰度图像-->二值化
-    #图像处理
-    def _image_process(self, color='blue'): 
 
+    # 图像处理
+    # 对图像的初步处理步骤如下：
+    # 转换到HSV图像空间（HSV空间更容易分辨颜色）-->
+    # 提取图像中的蓝色部分-->
+    # 腐蚀与膨胀去除噪点-->转换为灰度图像-->二值化
+    def _image_process(self, color='blue'): 
         # Convert BGR to HSV
         original = self._original_image.copy()
         hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)    #转换到HSV颜色空间 
@@ -103,20 +104,20 @@ class image_converter:
         open_img = cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel)
         # 二值化 
         gray_img = cv2.cvtColor(open_img, cv2.COLOR_BGR2GRAY)
-        ret, self._bin_img = cv2.threshold(gray_img, 10, 255, cv2.THRESH_BINARY)
+        ret, bin_img = cv2.threshold(gray_img, 10, 255, cv2.THRESH_BINARY)
 
-        #TODO 计算偏移 还需验证……
-        contours, hierarchy = cv2.findContours(self._bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        x=None
+        contours, hierarchy = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if len(contours)<1: # 没有找到物体
+            return [self._MAX_SCALE,self._MAX_SCALE,200]
         [bx,by,bw,bh,ba]=[0]*5
         best = 1000
         scale = 0.0007 # per pixel #TODO by resolution and height
         for c in contours:
             # find bounding box coordinates
             # x, y, w, h = cv2.boundingRect(c)            
-            rect = cv2.minAreaRect(self._bin_img)            
-            x, y = rect[0] # 中心坐标
-            w, h = rect[1]]# 长宽,总有 width>=height
+            rect = cv2.minAreaRect(bin_img)            
+            x, y = rect[0]   # 中心坐标
+            w, h = rect[1]]  # 长宽,总有 width>=height
             angle = rect[2]  # 角度:[-90,0)            
             now = abs(x-self._resolution[0]-self._pick_bias[0]/scale)+abs(y-self._resolution[1]+self._pick_bias[1]/scale)
             if now<best:
@@ -128,15 +129,10 @@ class image_converter:
         # cv2.rectangle(original, (x, y), (x + w, y + h), (0, 255, 0), 2)
         print bx,by,bw,bh,ba
         cv2.imshow("Searched", original)
-        cv2.waitKey(500)
-        if len(contours)>0:
-            return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],-(by-self._resolution[1]/2)*scale-self._pick_bias[1],abs(max(ba,-90-ba))]
-        else:
-            sys.exit()
-            #return [self._MAX_SCALE+1,self._MAX_SCALE+1]
-        #TODO scale
-        #return (rect.center-cvPoint2D32f(hsv.shape[1],hsv.shape[2]))*scale
+        cv2.waitKey(500) #TODO 减少显示时间提高速度
+        return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],-(by-self._resolution[1]/2)*scale-self._pick_bias[1],abs(max(ba,-90-ba))]
 
+# 棋盘信息
 class chess_board(object):
     def __init__(self,bx,by,bt,bg,beginx,beginy,height):
         self._bx = bx
@@ -175,6 +171,7 @@ class PickAndPlace(object):
         ns = "ExternalTools/" + limb + "/PositionKinematicsNode/IKService"
         self._iksvc = rospy.ServiceProxy(ns, SolvePositionIK)
         rospy.wait_for_service(ns, 5.0)
+
         # verify robot is enabled
         print("Getting robot state... ")
         self._rs = baxter_interface.RobotEnable(baxter_interface.CHECK_VERSION)
@@ -229,6 +226,7 @@ class PickAndPlace(object):
                 self._limb.move_to_joint_positions(joint_angles)
         else:
             rospy.logerr("No Joint Angles provided for move_to_joint_positions. Staying put.")
+    # 默认竖直姿态
     def posi2pose(self,x,y,z):
         pose = Pose()
         pose.orientation = self._quat
@@ -287,13 +285,19 @@ class PickAndPlace(object):
         self.move_to_wait()   
         self.statepub.publish(4)  
         print 'searching chess ...'
-        #wait power on
+        # wait power on
         rospy.sleep(8)
         [bias_x,bias_y,bias_angle] = self._image_processor._image_process() #m
         print bias_x,bias_y,bias_angle
-        while abs(bias_x)>self._image_processor._MAX_SCALE:
-            #TODO can't find
-            pass
+        while bias_angle>100:
+            #TODO 要是永远找不到……/错误的位置的限制？
+            # 随机移动
+            current_pose = self._limb.endpoint_pose()
+            current_pose['position'].x = current_pose['position'].x + (random.randint(1,5) - 3)*0.02
+            current_pose['position'].y = current_pose['position'].y + (random.randint(1,5) - 3)*0.02
+            self._servo_to_pose(current_pose,False)
+            [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
+        print 'find chess!'
         # 细微调整
         while abs(bias_x)>0.003 or abs(bias_y)>0.003 or bias_angle > 5:
             current_pose = self._limb.endpoint_pose()
@@ -361,7 +365,7 @@ def main():
     rospy.init_node("arm_controller")
     rospy.Subscriber('posi/ai',Int16MultiArray,cb_move)
     
-    # Starting Joint angles for left arm
+    # Starting Joint angles for left arm TODO
     starting_joint_angles = {limb+'_w0': 0.6699952259595108,
                              limb+'_w1': 1.030009435085784,
                              limb+'_w2': -0.4999997247485215,
@@ -369,9 +373,15 @@ def main():
                              limb+'_e1': 1.9400238130755056,
                              limb+'_s0': -0.08000397926829805,
                              limb+'_s1': -0.9999781166910306}
+    # 参数们，订阅了话题可以在运行时被修改
     [bx,by,bt,bg,bex,bey,bh]=[0.83,0.09,0,0.04,0.6,-0.55,-0.25]
     pnp = PickAndPlace(limb,bex,bey,bx,by,bt,bg,bh,hover_distance)
     pnp.move_to_start(starting_joint_angles)
+
+    def exiting():
+        print 'exiting arm controller...'
+    rospy.on_shutdown(exiting)
+    
     global begin,ai_col,ai_row
     begin = False
     ai_row = 7
