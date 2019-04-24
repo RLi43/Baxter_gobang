@@ -34,6 +34,8 @@ Undo: [image_processor] , image for face
 
 ## referrence
 
+Andrew Tzer-Yeu Chen and Kevin I-Kai Wang ,Computer Vision Based Chess Playing Capabilities for the Baxter Humanoid Robot 
+
 ###### gobang AI
 
 mostly from https://github.com/skywind3000/gobang, modified it to fit ROS

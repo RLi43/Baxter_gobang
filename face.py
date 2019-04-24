@@ -9,21 +9,23 @@ import rospy
 import cv2
 import cv_bridge
 import numpy as np
+import random
+import time
 
 from sensor_msgs.msg import (
     Image,
 )
 from std_msgs.msg import Char
 
-# Progress: 1: Wating 2: Thingking 3: Moving 4: Seaching 5: Picking 6: Moving 7: Placing 8: Moving 11: Pause 12: AI-Win 13: Human-Win
-def cb_face(ai_s):
-    global state
-    state = ai_s
-    
-def show_image(state):
-    global pub,imgs
-    pub.publish(imgs[state])
-    rospy.sleep(1)
+# TODO Control Navigator Lights http://sdk.rethinkrobotics.com/wiki/API_Reference#
+# TODO Sonor to show face http://sdk.rethinkrobotics.com/wiki/API_Reference#Sonar
+# IR Range
+
+
+
+
+# Progress: 1: Waiting 2: Thingking 3: Moving 4: Seaching 5: Picking 6: Moving 7: Placing 8: Moving 11: Pause 12: AI-Win 13: Human-Win
+
 
 # def send_image(path):
 #     """
@@ -38,55 +40,91 @@ def show_image(state):
 #     pub.publish(msg)
 #     # Sleep to allow for image to be published.
 #     rospy.sleep(1)
-def load(name):
-    return cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('img/'+name+'.jpg'), encoding="bgr8")
 
-def main():
-    global state
-    state = 1
-    imgs = {
-        'open_eyes':load('open'),
-        'close_eyes':load('close'),
-        'think':load('think'),
-        'search':load('search'),
-        'win':load('win'),
-        'lose':load('lose'),
-        'motion':load('motion')
-    }
-    rospy.init_node('baxter_emotion', anonymous=True)
-    rospy.Subscriber('ai_state',Char,cb_face)
-    pub = rospy.Publisher('/robot/xdisplay', Image, latch=True)
-    old_state = state
-    import random
-    import time
-    winkle_delay = 3+random.randint(0,100)/50.0
-    time_last = time.time()
-    while not rospy.on_shutdown():
-        if old_state == state:
-            if (state == 1 or state == 12):
-                #眨眼 
-                #TODO 做眼神什么的 感觉更智能了呢
-                if time.time()-time_last >= winkle_delay:
-                    pub.publish(imgs['close_eyes'])
-                    rospy.sleep(1)
-                    pub.publish(imgs['open_eyes'])
-                    winkle_delay = 3+random.randint(0,100)/50.0
-                    time_last = time.time()
-            continue
-        else:
-            old_state = state
-            if state == 1 or state == 12:
-                pub.publish(imgs['wait'])
-            elif state == 2:
-                pub.publish(imgs['think'])
-            elif state == 4:
-                pub.publish(imgs['search'])
-            elif state == 12:
-                pub.publish(imgs['win'])
-            elif state == 13:
-                pub.publish(imgs['lose'])
-            elif state<10 and state>2:
-                pub.publish(imgs['motion'])
+class face(object):
+    def __init__(self):
+        self.state = 1
+        self.imgs = {
+            'open_eyes':self.load('open'),
+            'close_eyes':self.load('close'),
+            'think':self.load('think'),
+            'get':self.load('get'),
+            'win':self.load('win'),
+            'lose':self.load('lose'),
+            'normal':self.load('normal'),
+            'right':self.load('right'),
+            'left':self.load('left'),
+            'down_left':self.load('down_left'),
+            'down_right':self.load('down_right'),
+            'down_mid':self.load('down_mid'),
+            'up':self.load('up')
+        }
+        rospy.init_node('baxter_emotion', anonymous=True)
+        rospy.Subscriber('ai_state',Char,self.cb_face)
+        self.pub = rospy.Publisher('/robot/xdisplay', Image, latch=True)
+    def load(self,name):
+        return cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('img/'+name+'.png'), encoding="bgr8")
+    def cb_face(self,ai_s):
+        self.state = ai_s      
+    def show_image(self,name):
+        self.pub.publish(self.imgs[name])
+        #rospy.sleep(1) #
+    def go(self):
+        self.show_image('normal')
+        old_state = self.state
+        winkle_delay = 3+random.randint(0,100)/50.0
+        time_last = time.time()
+        rate = rospy.Rate(20)
+        open_eye = True
+        open_pos = 'normal'
+        while not rospy.on_shutdown():
+            if old_state == self.state:
+                # waiting for human
+                if (self.state == 1 or self.state == 11 or self.state == 2):
+                    #眨眼 
+                    #TODO 做眼神什么的 感觉更智能了呢
+                    if open_eye:
+                        if time.time()-time_last >= winkle_delay:
+                            time_last = time.time()
+                            self.show_image('close_eyes')
+                            winkle_delay = 3+random.randint(0,100)/50.0
+                            open_eye = False
+                    else:
+                        if time.time()-time_last >= 1.0:
+                            time_last = time.time()
+                            self.show_image(open_pos)
+                            open_eye = True
+                    if (self.state != 2): #Not Thinking
+                        temp_rand = random.randint(0,20)
+                        if temp_rand>17:
+                            open_pos = 'right'
+                        elif temp_rand<3:
+                            open_pos = 'left'
+                        elif temp_rand < 6:
+                            open_pos = 'down_mid'
+                        else:
+                            open_pos = 'normal'
+                    else:
+                        open_pos = 'think'
+            else:
+                old_state = self.state
+                if self.state == 3:
+                    self.show_image('get')
+                elif self.state == 4:
+                    self.show_image('down_left')
+                elif self.state == 6 or self.state == 5 or self.state == 7:
+                    self.show_image('down_mid')
+                elif self.state == 1:
+                    self.show_image('normal')
+                elif self.state == 2:
+                    self.show_image('think')
+                elif self.state == 12:
+                    self.show_image('win')
+                elif self.state == 13:
+                    self.show_image('lose')
+                else:
+                    self.show_image('normal')
+            rate.sleep()
     # if not os.access(args.file, os.R_OK):
     #     rospy.logerr("Cannot read file at '%s'" % (args.file,))
     #     return 1
@@ -98,7 +136,7 @@ def main():
     #     rospy.sleep(args.delay)
     # send_image(args.file)
 
-    return 0
 
 if __name__ == '__main__':
-    sys.exit(main())
+    fa = face()
+    sys.exit(fa.go())
