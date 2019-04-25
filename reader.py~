@@ -42,5 +42,5 @@ if __name__ == '__main__':
     reader = img_reader('left_hand_camera')#right_hand_camera head_camera
     reader.open_cam()
     rospy.sleep(5)
-    #reader.save()
+    reader.show()
     #reader.open_cam(False)

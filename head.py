@@ -23,7 +23,7 @@ from sensor_msgs.msg import PointCloud
 # Progress: 1: Waiting 2: Thingking 3: Moving 4: Seaching 5: Picking 6: Moving 7: Placing 8: Moving 11: Pause 12: AI-Win 13: Human-Win
 
 class haloLED(object):
-    def __init__(self)
+    def __init__(self):
         self.red = rospy.Publisher("/robot/sonar/lights/set_red_level",Float32,queue_size = 2)
         self.green = rospy.Publisher("/robot/sonar/lights/set_green_level",Float32,queue_size = 2)
         # read_red = rospy.Subsriber
@@ -40,21 +40,52 @@ class Head(object):
         rospy.init_node('head_controller')
         self.head = baxter_interface.Head()
         self.led = haloLED()
-        self.sonarLED = 0
-        self.state = 0
-        rospy.Subsriber('/robot/sonar/head_sonar/lights/state',UInt16,self.cb_sonar)
-        rospy.Subsriber('ai_state',Char,self.cb_state)
+        self.sonar = None
+        self.state = 1
+        rospy.Subscriber('/robot/sonar/head_sonar/state',PointCloud,self.cb_sonar)
+        rospy.Subscriber('ai_state',Char,self.cb_state)
     def pan(self,angle):
-        self.head.set_pan(angle,100,2) #speed , timeout   
+        self.head.set_pan(angle,0.5,2) #speed , timeout   
     def go(self):
         old_state = self.state
         i = 0
+        a = 0.7
+        old = 0
         while not rospy.is_shutdown():
             if old_state == self.state:
                 # waiting, head follow
-                if self.state == 1 or self.stae >= 11:
+                if self.state == 1 or self.state >= 11:
                     #TODO head follow
-                    
+                    if self.sonar:
+                        #print self.sonar
+                        get_id = self.sonar[0].values
+                        value = self.sonar[1].values
+                        if get_id:
+                            for i in range(len(get_id)):
+                                if i>6: i = i-12
+                            va = []
+                            fa = False
+                            for i in range(len(value)):
+                                if value[i]<1.2:
+                                    va.append(0)
+                                else:
+                                    va.append( 5 - value[i])
+                                    fa = True
+                            # va = [5 - value[i] for i in range(len(value))]
+                            # index = get_id[value.index(min(value))]
+                            if fa:
+                                print self.sonar
+                                index = np.average(get_id,weights = va)
+                                print 'index', index
+                                if index > 6:
+                                    index = -(index-12)/4
+                                else: index = -index/4
+                                index = index*a + old*(1-a)
+                                if index>1.3: index = 1.3
+                                elif index<-1.3:index = -1.3
+                                old = index
+                                self.pan(index)
+                                rospy.sleep(2)
                     # win or lose
                     if self.state == 12 or self.state == 13:
                         i = (i+1)%101
@@ -70,7 +101,7 @@ class Head(object):
         self.state = data.data
 
     def cb_sonar(self,data):
-        self.sonarLED = data.data
+        self.sonar = data.channels
 
 
 if __name__ == '__main__':

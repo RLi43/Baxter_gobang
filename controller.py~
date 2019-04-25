@@ -42,28 +42,18 @@ import baxter_interface
 from baxter_interface.camera import CameraController
 from gobang.msg import ChessBoard
 
-deg = 180/math.pi
 # 四元数乘法，绕z轴旋转
 def rotate_z(ori,angle):
     # qr = [cos(a/2),sin(a/2)*[0,0,1]]
     #[w1 v2][w1 v2] = [wqw2-v1v2,w1v2+w2v1+v2*v1]
     # 原理 https://www.cnblogs.com/mengdd/p/3238223.html
     q = [ori.w,ori.x,ori.y,ori.z]
-    ca = math.cos(angle/180*math.pi)
-    sa = math.sin(angle/180*math.pi)
+    ca = math.cos(angle)
+    sa = math.sin(angle)
     rs = Quaternion(w = q[0]*ca-q[3]*sa, 
                     x = q[1]*ca-q[2]*sa, 
                     y = q[2]*ca+q[1]*sa, 
                     z = q[3]*ca+q[0]*sa)
-    return rs
-def ori_z(angle):
-    ori = Quaternion(w = 0,
-                    x = -math.sin(angle/360*math.pi),
-                    y = math.cos(angle/360*math.pi),
-                    z = 0)
-    return ori
-def get_rota_z(ori):
-    return math.acos(ori.y)*deg*2
 
 
 # 参考：https://blog.csdn.net/hey_chaoxia/article/details/81914729 
@@ -74,9 +64,9 @@ class image_converter:
         self._image_sub = rospy.Subscriber('/cameras/'+name+'_hand_camera/image', Image, self._image_callback)
         self._original_image = None #从相机获取的原始图像(opencv格式) 
         self._MAX_SCALE = 100       # 找不到棋子就返回更大的值
-        self._pick_bias = (0.0175,0.018) # the gripper is not at the center of the camera
-        # 颜色在HSV空间中的上下阈值 蓝色：[90,130,30],[130,200,150]v 148 128
-        self._color_dict = {'blue':[[70,80,30],[180,220,255]]} 
+        self._pick_bias = (0.025,0.03) # the gripper is not at the center of the camera
+        # 颜色在HSV空间中的上下阈值 蓝色：[90,130,30],[130,200,150]
+        self._color_dict = {'blue':[[90,50,40],[130,220,100]]} 
     def open_cam(self,on = True):
         #打开相机
         if on:
@@ -120,38 +110,27 @@ class image_converter:
         if len(contours)<1: # 没有找到物体
             return [self._MAX_SCALE,self._MAX_SCALE,200]
         [bx,by,bw,bh,ba]=[0]*5
-        brect = None
         best = 1000
-        scale = 0.00066 # per pixel #TODO by resolution and height
-        # cv2.imshow("Img", open_img)
-        # cv2.waitKey(0)
-        biasx = self._resolution[0]/2+self._pick_bias[1]/scale
-        biasy = self._resolution[1]/2-self._pick_bias[0]/scale
+        scale = 0.0007 # per pixel #TODO by resolution and height
         for c in contours:
             # find bounding box coordinates
             # x, y, w, h = cv2.boundingRect(c)            
-            rect = cv2.minAreaRect(c)            
+            rect = cv2.minAreaRect(bin_img)            
             x, y = rect[0]   # 中心坐标
-            w, h = rect[1]  # 长宽,总有 width>=height
+            w, h = rect[1]]  # 长宽,总有 width>=height
             angle = rect[2]  # 角度:[-90,0)            
-            now = abs(x-biasx)+abs(y-biasy)
-            box = cv2.cv.BoxPoints(rect)   
-            box =np.int0(box)#int32 / int64
-            cv2.drawContours(original, [box], 0, (0, 255, 0), 2)  # 画出该矩形
-            #print (now)
+            now = abs(x-self._resolution[0]-self._pick_bias[0]/scale)+abs(y-self._resolution[1]+self._pick_bias[1]/scale)
             if now<best:
                 [bx,by,bw,bh,ba,best]= [x,y,w,h,angle,now]
-                brect = rect
-                best = now
-        box = cv2.cv.BoxPoints(brect)   
+        original = original.clone()
+        box = cv2.boxPoints(rect)   
         box =np.int0(box)#int32 / int64
         cv2.drawContours(original, [box], 0, (0, 0, 255), 3)  # 画出该矩形
-        # cv2.rectangle(original, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
-        cv2.rectangle(original, (np.int0(biasx), np.int0(biasy)), (np.int0(biasx) + 1, np.int0(biasy) + 1), (255, 0, 0), 2)
+        # cv2.rectangle(original, (x, y), (x + w, y + h), (0, 255, 0), 2)
         print bx,by,bw,bh,ba
         cv2.imshow("Searched", original)
-        cv2.waitKey(10) #TODO 减少显示时间提高速度
-        return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],-(by-self._resolution[1]/2)*scale-self._pick_bias[1],min(90-abs(ba),abs(ba))]
+        cv2.waitKey(500) #TODO 减少显示时间提高速度
+        return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],-(by-self._resolution[1]/2)*scale-self._pick_bias[1],abs(max(ba,-90-ba))]
 
 # 棋盘信息
 class chess_board(object):
@@ -184,12 +163,10 @@ class PickAndPlace(object):
         self._limb = baxter_interface.Limb(limb)
         self._gripper = baxter_interface.Gripper(limb)
         self._quat = Quaternion(x=0,y=1,z=0,w=0)
-        self._strat_angle = [-1.112136071216925, -0.060975736318445196,-1.3782817379150443,1.285859395444948, -0.763922432366936, 1.2383059910205003, 1.1547040380807452]
+        self._strat_angle = [0]*7 #TODO
         self._board_cfg = chess_board(board_x,board_y,board_t,board_g,begin_x,begin_y,board_height)
         self._image_processor = image_converter(limb)        
         self.statepub = rospy.Publisher('ai_state',Char,queue_size=10)
-        self.angle = 0
-        self._joint_names = [limb+'_s0',limb+'_s1',limb+'_w0',limb+'_w1',limb+'_w2',limb+'_e0',limb+'_e1']
         
         ns = "ExternalTools/" + limb + "/PositionKinematicsNode/IKService"
         self._iksvc = rospy.ServiceProxy(ns, SolvePositionIK)
@@ -206,7 +183,6 @@ class PickAndPlace(object):
         print("Moving the {0} arm to start pose...".format(self._limb_name))
         if not start_angles:
             start_angles = dict(zip(self._joint_names, self._strat_angle))
-            #start_angles = self.ik_request(self.posi2pose(self._board_cfg._begin_x,self._board_cfg._begin_y,self._board_cfg._height+self._hover_distance))
         self._guarded_move_to_joint_position(start_angles,False)
         self.gripper_open()
         rospy.sleep(1.0)
@@ -245,12 +221,11 @@ class PickAndPlace(object):
     def _guarded_move_to_joint_position(self, joint_angles,fast):
         if joint_angles:
             if fast:
-                self._limb.move_to_joint_positions(joint_angles,timeout = 1.5)
+                self._limb.move_to_joint_positions(joint_angles,timeout = 1.0)
             else:
                 self._limb.move_to_joint_positions(joint_angles)
         else:
             rospy.logerr("No Joint Angles provided for move_to_joint_positions. Staying put.")
-            self.move_to_start()
     # 默认竖直姿态
     def posi2pose(self,x,y,z):
         pose = Pose()
@@ -259,13 +234,9 @@ class PickAndPlace(object):
         return pose
     def move_to_wait(self):        
         self._approach(self.posi2pose(self._board_cfg._begin_x,self._board_cfg._begin_y,self._board_cfg._height))
-        self.gripper_open()
     def gripper_open(self):
         self._gripper.open()
         rospy.sleep(1.0) #TODO 夹子不会很快就被操作，可以考虑去掉这个睡眠提高速度
-    def gripper_command(self,value):
-        self._gripper.command_position(value)
-        rospy.sleep(1.0)
     def gripper_close(self):
         self._gripper.close()
         rospy.sleep(1.0)
@@ -311,51 +282,30 @@ class PickAndPlace(object):
         self._image_processor.open_cam()
         self.gripper_open()
         self.statepub.publish(3)   
-        #self.move_to_wait() 
-        self.move_to_start()  
+        self.move_to_wait()   
         self.statepub.publish(4)  
         print 'searching chess ...'
         # wait power on
-        # rospy.sleep(8)
+        rospy.sleep(8)
         [bias_x,bias_y,bias_angle] = self._image_processor._image_process() #m
         print bias_x,bias_y,bias_angle
         while bias_angle>100:
             #TODO 要是永远找不到……/错误的位置的限制？
             # 随机移动
             current_pose = self._limb.endpoint_pose()
-            poses = Pose()
-            poses.position = Point(x=current_pose['position'].x + (random.randint(1,5) - 3)*0.02,
-                                     y = current_pose['position'].y + (random.randint(1,5) - 3)*0.02,
-                                     z = current_pose['position'].z)
-            poses.orientation = self._quat
-            self._servo_to_pose(poses,False)
+            current_pose['position'].x = current_pose['position'].x + (random.randint(1,5) - 3)*0.02
+            current_pose['position'].y = current_pose['position'].y + (random.randint(1,5) - 3)*0.02
+            self._servo_to_pose(current_pose,False)
             [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
         print 'find chess!'
         # 细微调整
-        while abs(bias_x)>0.005 or abs(bias_y)>0.003 or bias_angle > 10:
+        while abs(bias_x)>0.003 or abs(bias_y)>0.003 or bias_angle > 5:
             current_pose = self._limb.endpoint_pose()
-            a = get_rota_z(current_pose['orientation'])
-            posi = Point(x=current_pose['position'].x+(bias_x*math.sin(a/deg)+bias_y*math.cos(a/deg)),
-                            y=current_pose['position'].y-(bias_x*math.cos(a/deg)-bias_y*math.sin(a/deg)),
-                            z=current_pose['position'].z)
-            ori = current_pose['orientation']
-            #print ori
-            if abs(bias_x)<0.005 and abs(bias_y)<0.005:
-                if bias_angle>45: bias_angle = 90 - bias_angle
-                goal_a = a+bias_angle
-                if goal_a > 40: goal_a = goal_a - 90
-                # if goal_a < -60: goal_a = -90 - goal_a
-                print 'goal_a',goal_a,' a',a
-                ori = ori_z(goal_a)
-            poses = Pose(position = posi,
-                               #orientation = current_pose['orientation'])
-                               orientation = ori) #current_pose['orientation']
-            #print poses
-            # poses = self.posi2pose(current_pose['position'].x+bias_y,
-            #                                    current_pose['position'].y-bias_x,
-            #                                    current_pose['position'].z)
-            self._servo_to_pose(poses,True) # need quick shutdown to keep images still
-            rospy.sleep(2) # wait to move
+            current_pose['position'].x = current_pose['position'].x+bias_y
+            current_pose['position'].y = current_pose['position'].y-bias_x
+            current_pose['orientation'] = rotate_z(current_pose['orientation'],bias_angle)
+            self._servo_to_pose(current_pose,True) # need quick shutdown to keep images still
+            rospy.sleep(0.2) # wait to move
             [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
             print bias_x,bias_y,bias_angle
             if rospy.is_shutdown():
@@ -363,7 +313,6 @@ class PickAndPlace(object):
         #self._image_processor.open_cam(False)
 
         self.statepub.publish(5)  
-        self.gripper_command(50)
         print 'picking ...'
         self._vertical(False)
         self.gripper_close()
@@ -375,25 +324,26 @@ class PickAndPlace(object):
         self.statepub.publish(7)
         self._servo_to_pose(pose)
         # open the gripper
-        self.gripper_command(30)
+        self.gripper_open()
         # retract to clear object
         self._vertical()
     def place(self, row,col):
         # 棋盘坐标
-        x = self._board_cfg._bx + (col*math.sin(self._board_cfg._bt)-(row)*math.cos(self._board_cfg._bt))*self._board_cfg._bg
-        y = self._board_cfg._by - (col*math.cos(self._board_cfg._bt)+(row)*math.sin(self._board_cfg._bt))*self._board_cfg._bg
+        x = self._board_cfg._bx + (col*math.sin(self._board_cfg._bt)-row*math.cos(self._board_cfg._bt))*self._board_cfg._bg
+        y = self._board_cfg._by - (col*math.cos(self._board_cfg._bt)+row*math.sin(self._board_cfg._bt))*self._board_cfg._bg
         print row,col,x,y    
         self.statepub.publish(6)    
         print 'placing the chess...'
         # 考虑棋盘的角度
-        pose = Pose()
-        pose.position = Point(x,y,self._board_cfg._height)
-        pose.orientation = ori_z(self._board_cfg._bt*deg)
+        pose = self._limb.endpoint_pose()
+        pose['position'].x = x
+        pose['position'].y = y
+        pose['position'].z = self._board_cfg._height
+        pose['orientation'] = rotate_z(self._quat,self._board_cfg._bt)
         self.__place__(pose)
         self.statepub.publish(8) 
         print 'moving to wait...'   
-        #self.move_to_wait()  
-        self.move_to_start()
+        self.move_to_wait()  
         self.statepub.publish(1)  
         print 'done'  
 
@@ -424,10 +374,10 @@ def main():
                              limb+'_s0': -0.08000397926829805,
                              limb+'_s1': -0.9999781166910306}
     # 参数们，订阅了话题可以在运行时被修改
-    [bx,by,bt,bg,bex,bey,bh]=[0.8516556,-0.203669,-0.35,0.04,0.247,-0.943,-0.262]
+    [bx,by,bt,bg,bex,bey,bh]=[0.83,0.09,0,0.04,0.6,-0.55,-0.25]
     pnp = PickAndPlace(limb,bex,bey,bx,by,bt,bg,bh,hover_distance)
-    pnp.move_to_start()
-    pnp._image_processor.open_cam()
+    pnp.move_to_start(starting_joint_angles)
+
     def exiting():
         print 'exiting arm controller...'
     rospy.on_shutdown(exiting)
@@ -437,16 +387,13 @@ def main():
     ai_row = 7
     ai_col = 7
     rate = rospy.Rate(10)
-    print 'begin to grip'
-    pnp.pick()
     while not rospy.is_shutdown():
         if begin:
             begin = False
-            print 'begin to move to',ai_row,ai_col
-            pnp.place(ai_row,ai_col)
             print 'begin to grip'
             pnp.pick()
-            print 'waiting...'
+            print 'begin to move to',ai_row,ai_col
+            pnp.place(ai_row,ai_col)
     return 0
 
 if __name__ == '__main__':

@@ -8,6 +8,8 @@ import rospy
 
 import cv2
 import cv_bridge
+import PIL          #加载和集成PNG等图像
+#from baxter_demo_ui import img_proc
 import numpy as np
 import random
 import time
@@ -61,14 +63,21 @@ class face(object):
         }
         rospy.init_node('baxter_emotion', anonymous=True)
         rospy.Subscriber('ai_state',Char,self.cb_face)
-        self.pub = rospy.Publisher('/robot/xdisplay', Image, latch=True)
+        self.pub = rospy.Publisher('/robot/xdisplay', Image, latch=True,queue_size=2)
     def load(self,name):
-        return cv_bridge.CvBridge().cv2_to_imgmsg(cv2.imread('img/'+name+'.png'), encoding="bgr8")
+        path = 'src/gobang/img/'+name+'.png'
+        if not os.access(path, os.R_OK):
+            rospy.logerr("Cannot read file at '%s'" % (path,))
+            return False
+        img = cv2.imread(path)
+        msg = cv_bridge.CvBridge().cv2_to_imgmsg(img, encoding="bgr8")
+        return msg #msg
     def cb_face(self,ai_s):
         self.state = ai_s      
     def show_image(self,name):
         self.pub.publish(self.imgs[name])
-        #rospy.sleep(1) #
+        #self.pub.publish(self.load(name))
+        rospy.sleep(1) #
     def go(self):
         self.show_image('normal')
         old_state = self.state
@@ -77,7 +86,7 @@ class face(object):
         rate = rospy.Rate(20)
         open_eye = True
         open_pos = 'normal'
-        while not rospy.on_shutdown():
+        while not rospy.is_shutdown():
             if old_state == self.state:
                 # waiting for human
                 if (self.state == 1 or self.state == 11 or self.state == 2):
@@ -125,9 +134,6 @@ class face(object):
                 else:
                     self.show_image('normal')
             rate.sleep()
-    # if not os.access(args.file, os.R_OK):
-    #     rospy.logerr("Cannot read file at '%s'" % (args.file,))
-    #     return 1
     #         if args.delay > 0:
     #     rospy.loginfo(
     #         "Waiting for %s second(s) before publishing image to face" %
