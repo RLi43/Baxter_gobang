@@ -74,9 +74,9 @@ class image_converter:
         self._image_sub = rospy.Subscriber('/cameras/'+name+'_hand_camera/image', Image, self._image_callback)
         self._original_image = None #从相机获取的原始图像(opencv格式) 
         self._MAX_SCALE = 100       # 找不到棋子就返回更大的值
-        self._pick_bias = (0.0175,0.018) # the gripper is not at the center of the camera
+        self._pick_bias = (0.025,0.023) # the gripper is not at the center of the camera
         # 颜色在HSV空间中的上下阈值 蓝色：[90,130,30],[130,200,150]v 148 128
-        self._color_dict = {'blue':[[70,80,30],[180,220,255]]} 
+        self._color_dict = {'blue':[[70,80,30],[180,255,255]],'purple':[[115,0,0],[255,255,255]]} #125
     def open_cam(self,on = True):
         #打开相机
         if on:
@@ -98,7 +98,7 @@ class image_converter:
     # 转换到HSV图像空间（HSV空间更容易分辨颜色）-->
     # 提取图像中的蓝色部分-->
     # 腐蚀与膨胀去除噪点-->转换为灰度图像-->二值化
-    def _image_process(self, color='blue'): 
+    def _image_process(self, color='blue',best_is_nearest = True): #or biggest
         # Convert BGR to HSV
         original = self._original_image.copy()
         hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)    #转换到HSV颜色空间 
@@ -133,8 +133,11 @@ class image_converter:
             rect = cv2.minAreaRect(c)            
             x, y = rect[0]   # 中心坐标
             w, h = rect[1]  # 长宽,总有 width>=height
-            angle = rect[2]  # 角度:[-90,0)            
-            now = abs(x-biasx)+abs(y-biasy)
+            angle = rect[2]  # 角度:[-90,0)  
+            if best_is_nearest:
+                now = abs(x-biasx)+abs(y-biasy)
+            else:
+                now = 1000-(w+h)
             box = cv2.cv.BoxPoints(rect)   
             box =np.int0(box)#int32 / int64
             cv2.drawContours(original, [box], 0, (0, 255, 0), 2)  # 画出该矩形
@@ -151,7 +154,7 @@ class image_converter:
         print bx,by,bw,bh,ba
         cv2.imshow("Searched", original)
         cv2.waitKey(10) #TODO 减少显示时间提高速度
-        return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],-(by-self._resolution[1]/2)*scale-self._pick_bias[1],min(90-abs(ba),abs(ba))]
+        return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],(by-self._resolution[1]/2)*scale+self._pick_bias[1],min(90-abs(ba),abs(ba))]
 
 # 棋盘信息
 class chess_board(object):
@@ -184,7 +187,7 @@ class PickAndPlace(object):
         self._limb = baxter_interface.Limb(limb)
         self._gripper = baxter_interface.Gripper(limb)
         self._quat = Quaternion(x=0,y=1,z=0,w=0)
-        self._strat_angle = [-1.112136071216925, -0.060975736318445196,-1.3782817379150443,1.285859395444948, -0.763922432366936, 1.2383059910205003, 1.1547040380807452]
+        self._strat_angle = [-1.4557477677032578, 0.4621117123504809, -1.9980099762207515, 1.979218711569155, -0.6511748444573582,1.9358837543113923, 1.7629274204773118]
         self._board_cfg = chess_board(board_x,board_y,board_t,board_g,begin_x,begin_y,board_height)
         self._image_processor = image_converter(limb)        
         self.statepub = rospy.Publisher('ai_state',Char,queue_size=10)
@@ -250,7 +253,8 @@ class PickAndPlace(object):
                 self._limb.move_to_joint_positions(joint_angles)
         else:
             rospy.logerr("No Joint Angles provided for move_to_joint_positions. Staying put.")
-            self.move_to_start()
+            #TODO 
+            # self.move_to_start()
     # 默认竖直姿态
     def posi2pose(self,x,y,z):
         pose = Pose()
@@ -307,19 +311,19 @@ class PickAndPlace(object):
         self.gripper_close()
         # retract to clear object
         self._vertical()
-    def pick(self):       
+    def finding(self,color='blue'):
         self._image_processor.open_cam()
         self.gripper_open()
         self.statepub.publish(3)   
         #self.move_to_wait() 
-        self.move_to_start()  
+        #self.move_to_start()  
         self.statepub.publish(4)  
         print 'searching chess ...'
         # wait power on
         # rospy.sleep(8)
-        [bias_x,bias_y,bias_angle] = self._image_processor._image_process() #m
+        [bias_x,bias_y,bias_angle] = self._image_processor._image_process(color) #m
         print bias_x,bias_y,bias_angle
-        while bias_angle>100:
+        while bias_x>90:
             #TODO 要是永远找不到……/错误的位置的限制？
             # 随机移动
             current_pose = self._limb.endpoint_pose()
@@ -333,35 +337,45 @@ class PickAndPlace(object):
         print 'find chess!'
         # 细微调整
         while abs(bias_x)>0.005 or abs(bias_y)>0.003 or bias_angle > 10:
-            current_pose = self._limb.endpoint_pose()
-            a = get_rota_z(current_pose['orientation'])
-            posi = Point(x=current_pose['position'].x+(bias_x*math.sin(a/deg)+bias_y*math.cos(a/deg)),
-                            y=current_pose['position'].y-(bias_x*math.cos(a/deg)-bias_y*math.sin(a/deg)),
-                            z=current_pose['position'].z)
-            ori = current_pose['orientation']
-            #print ori
-            if abs(bias_x)<0.005 and abs(bias_y)<0.005:
-                if bias_angle>45: bias_angle = 90 - bias_angle
-                goal_a = a+bias_angle
-                if goal_a > 40: goal_a = goal_a - 90
-                # if goal_a < -60: goal_a = -90 - goal_a
-                print 'goal_a',goal_a,' a',a
-                ori = ori_z(goal_a)
-            poses = Pose(position = posi,
-                               #orientation = current_pose['orientation'])
-                               orientation = ori) #current_pose['orientation']
-            #print poses
-            # poses = self.posi2pose(current_pose['position'].x+bias_y,
-            #                                    current_pose['position'].y-bias_x,
-            #                                    current_pose['position'].z)
-            self._servo_to_pose(poses,True) # need quick shutdown to keep images still
-            rospy.sleep(2) # wait to move
-            [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
-            print bias_x,bias_y,bias_angle
+            if bias_x>90:
+                self.move_to_start()
+            else:
+                current_pose = self._limb.endpoint_pose()
+                a = get_rota_z(current_pose['orientation'])
+                posi = Point(x=current_pose['position'].x+(bias_x*math.sin(a/deg)-bias_y*math.cos(a/deg)),
+                                y=current_pose['position'].y-(bias_x*math.cos(a/deg)+bias_y*math.sin(a/deg)),
+                                z=self._quat.z)
+                ori = current_pose['orientation']
+                print 'current:','a',a,'x',current_pose['position'].x,'y',current_pose['position'].y
+                print 'goal'
+                print 'x',current_pose['position'].x+(bias_x*math.sin(a/deg)-bias_y*math.cos(a/deg))
+                print 'y',current_pose['position'].y-(bias_x*math.cos(a/deg)+bias_y*math.sin(a/deg))
+                #print ori
+                if abs(bias_x)<0.005 and abs(bias_y)<0.005:
+                    if bias_angle>45: bias_angle = 90 - bias_angle
+                    goal_a = a+bias_angle
+                    if goal_a > 50: goal_a = goal_a - 90
+                    # if goal_a < -60: goal_a = -90 - goal_a
+                    print 'goal_a',goal_a,' a',a
+                    ori = ori_z(goal_a)
+                poses = Pose(position = posi,
+                                #orientation = current_pose['orientation'])
+                                orientation = ori) #current_pose['orientation']
+                #print poses
+                # poses = self.posi2pose(current_pose['position'].x+bias_y,
+                #                                    current_pose['position'].y-bias_x,
+                #                                    current_pose['position'].z)
+                self._servo_to_pose(poses,True) # need quick shutdown to keep images still
+                rospy.sleep(2) # wait to move
+                [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
+                print bias_x,bias_y,bias_angle
             if rospy.is_shutdown():
                 return 0
         #self._image_processor.open_cam(False)
-
+    def pick(self):     
+        self.move_to_start()  
+        self.finding()
+        print 'get it!'
         self.statepub.publish(5)  
         self.gripper_command(50)
         print 'picking ...'
@@ -373,7 +387,8 @@ class PickAndPlace(object):
         self._approach(pose)
         # servo to pose
         self.statepub.publish(7)
-        self._servo_to_pose(pose)
+        self._vertical(False)
+        #self._servo_to_pose(pose)
         # open the gripper
         self.gripper_command(30)
         # retract to clear object
@@ -415,18 +430,10 @@ def main():
     rospy.init_node("arm_controller")
     rospy.Subscriber('posi/ai',Int16MultiArray,cb_move)
     
-    # Starting Joint angles for left arm TODO
-    starting_joint_angles = {limb+'_w0': 0.6699952259595108,
-                             limb+'_w1': 1.030009435085784,
-                             limb+'_w2': -0.4999997247485215,
-                             limb+'_e0': -1.189968899785275,
-                             limb+'_e1': 1.9400238130755056,
-                             limb+'_s0': -0.08000397926829805,
-                             limb+'_s1': -0.9999781166910306}
     # 参数们，订阅了话题可以在运行时被修改
-    [bx,by,bt,bg,bex,bey,bh]=[0.8516556,-0.203669,-0.35,0.04,0.247,-0.943,-0.262]
+    [bx,by,bt,bg,bex,bey,bh]=[0.843658483898,-0.466132476831,-0.694190287892,0.04,0.14,-0.83,-0.14]
     pnp = PickAndPlace(limb,bex,bey,bx,by,bt,bg,bh,hover_distance)
-    pnp.move_to_start()
+    #pnp.move_to_start()
     pnp._image_processor.open_cam()
     def exiting():
         print 'exiting arm controller...'
@@ -437,6 +444,34 @@ def main():
     ai_row = 7
     ai_col = 7
     rate = rospy.Rate(10)
+    calibration = True
+    if calibration:
+        print 'calibration...'
+        i = 1
+        cordi = [[0.08,-0.6],[0.49,-0.90],[0.86,-0.40],[0.41,-0.07]]
+        points = []
+        while i<3:
+            print 'point:',i
+            pnp._approach(pnp.posi2pose(cordi[i][0],cordi[i][1],pnp._board_cfg._height))
+            rospy.sleep(2)
+            [bias_x,bias_y,bias_angle] = pnp._image_processor._image_process(color='purple',best_is_nearest=False) #m
+            current_pose = pnp._limb.endpoint_pose()
+            a = get_rota_z(current_pose['orientation'])
+            print 'bias',bias_x,bias_y,bias_angle,a
+            endp_p = pnp._limb.endpoint_pose()
+            print 'point',i,endp_p['position'].x,(bias_x*math.sin(a/deg)+bias_y*math.cos(a/deg)),endp_p['position'].y,-(bias_x*math.cos(a/deg)-bias_y*math.sin(a/deg))
+            points.append([endp_p['position'].x+(bias_x*math.sin(a/deg)-bias_y*math.cos(a/deg)),
+                           endp_p['position'].y-(bias_x*math.cos(a/deg)+bias_y*math.sin(a/deg))])
+            i = i+1
+        print points[0]," ",points[1]
+        bt = math.atan((points[0][1]-points[1][1])/(points[0][0]-points[1][0]))
+        if bt>math.pi/4: bt = bt - math.pi/2
+        bx = points[1][0] - 0.0125*(math.cos(bt)-math.sin(bt))
+        by = points[1][1] - 0.0125*(math.cos(bt)+math.sin(bt))
+        print bx,by,bt
+        pnp._board_cfg._bx = bx
+        pnp._board_cfg._by = by
+        pnp._board_cfg._bt = bt
     print 'begin to grip'
     pnp.pick()
     while not rospy.is_shutdown():

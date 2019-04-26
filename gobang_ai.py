@@ -981,3 +981,4 @@ if __name__ == '__main__':
     while not rospy.is_shutdown():
         game = gamemain()
         game.go()
+        rospy.sleep(120)

@@ -31,7 +31,7 @@ class img_reader(object):
     def open_cam(self,on = True):
         #打开相机
         if on:
-            self._camcon.resolution = (1280,800)
+            #self._camcon.resolution = (1280,800)
             self._camcon.open()
         else:
             self._camcon.close()
@@ -39,8 +39,8 @@ class img_reader(object):
 
 if __name__ == '__main__':
     rospy.init_node('image_reader')
-    reader = img_reader('left_hand_camera')#right_hand_camera head_camera
+    reader = img_reader('right_hand_camera')#right_hand_camera head_camera
     reader.open_cam()
     rospy.sleep(5)
-    #reader.save()
+    reader.save()
     #reader.open_cam(False)
