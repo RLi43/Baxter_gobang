@@ -7,9 +7,9 @@ Baxter robot play the gobang with human. #CV#gobang#Baxter#ROS#Matlab
 
 * gobang_ai
 * arm_controller
-** measure the position of chess board
-** grip chesses by the hand camera
-** place chess
+  * measure the position of chess board
+  * grip chesses by the hand camera
+  * place chess
 * image_processor
 * face - show picture on xdisplay
 * head - 
@@ -34,7 +34,7 @@ Baxter robot play the gobang with human. #CV#gobang#Baxter#ROS#Matlab
 
 
 
-## referrence
+## Referrence
 
 Andrew Tzer-Yeu Chen and Kevin I-Kai Wang ,Computer Vision Based Chess Playing Capabilities for the Baxter Humanoid Robot 
 
@@ -50,3 +50,5 @@ mostly from https://github.com/skywind3000/gobang, modified it to fit ROS
 ###### face
 
 baxter_tool
+## Pictures
+https://cloud.tsinghua.edu.cn/d/38ad384fa774416fab5a/
