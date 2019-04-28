@@ -122,7 +122,7 @@ class image_converter:
         [bx,by,bw,bh,ba]=[0]*5
         brect = None
         best = 1000
-        scale = 0.00066 # per pixel #TODO by resolution and height
+        scale = 0.00064 # per pixel #TODO by resolution and height
         # cv2.imshow("Img", open_img)
         # cv2.waitKey(0)
         biasx = self._resolution[0]/2+self._pick_bias[1]/scale
@@ -154,7 +154,7 @@ class image_converter:
         print bx,by,bw,bh,ba
         cv2.imshow("Searched", original)
         cv2.waitKey(10) #TODO 减少显示时间提高速度
-        return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],(by-self._resolution[1]/2)*scale+self._pick_bias[1],min(90-abs(ba),abs(ba))]
+        return [(bx-self._resolution[0]/2)*scale-self._pick_bias[0],(by-self._resolution[1]/2)*scale+self._pick_bias[1],abs(ba)]
 
 # 棋盘信息
 class chess_board(object):
@@ -312,7 +312,7 @@ class PickAndPlace(object):
         # retract to clear object
         self._vertical()
     def finding(self,color='blue'):
-        self._image_processor.open_cam()
+        #self._image_processor.open_cam()
         self.gripper_open()
         self.statepub.publish(3)   
         #self.move_to_wait() 
@@ -336,7 +336,7 @@ class PickAndPlace(object):
             [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
         print 'find chess!'
         # 细微调整
-        while abs(bias_x)>0.005 or abs(bias_y)>0.003 or bias_angle > 10:
+        while abs(bias_x)>0.006 or abs(bias_y)>0.005 or min(bias_angle,90-bias_angle) > 10:
             if bias_x>90:
                 self.move_to_start()
             else:
@@ -351,12 +351,12 @@ class PickAndPlace(object):
                 print 'x',current_pose['position'].x+(bias_x*math.sin(a/deg)-bias_y*math.cos(a/deg))
                 print 'y',current_pose['position'].y-(bias_x*math.cos(a/deg)+bias_y*math.sin(a/deg))
                 #print ori
-                if abs(bias_x)<0.005 and abs(bias_y)<0.005:
-                    if bias_angle>45: bias_angle = 90 - bias_angle
+                if bias_angle>45: bias_angle = 90 - bias_angle
+                if abs(bias_x)<0.005 and abs(bias_y)<0.005 and bias_angle>10:
                     goal_a = a+bias_angle
                     if goal_a > 50: goal_a = goal_a - 90
                     # if goal_a < -60: goal_a = -90 - goal_a
-                    print 'goal_a',goal_a,' a',a
+                    print 'goal_a',goal_a,' a',a,'bias_angle' ,bias_angle
                     ori = ori_z(goal_a)
                 poses = Pose(position = posi,
                                 #orientation = current_pose['orientation'])
@@ -366,14 +366,14 @@ class PickAndPlace(object):
                 #                                    current_pose['position'].y-bias_x,
                 #                                    current_pose['position'].z)
                 self._servo_to_pose(poses,True) # need quick shutdown to keep images still
-                rospy.sleep(2) # wait to move
+                rospy.sleep(3) # wait to move
                 [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
                 print bias_x,bias_y,bias_angle
             if rospy.is_shutdown():
                 return 0
         #self._image_processor.open_cam(False)
     def pick(self):     
-        self.move_to_start()  
+        #self.move_to_start()  
         self.finding()
         print 'get it!'
         self.statepub.publish(5)  
@@ -431,7 +431,7 @@ def main():
     rospy.Subscriber('posi/ai',Int16MultiArray,cb_move)
     
     # 参数们，订阅了话题可以在运行时被修改
-    [bx,by,bt,bg,bex,bey,bh]=[0.843658483898,-0.466132476831,-0.694190287892,0.04,0.14,-0.83,-0.14]
+    [bx,by,bt,bg,bex,bey,bh]=[0.86670074217 ,-0.427823712355, -0.671320492951,0.04,0.14,-0.83,-0.145]
     pnp = PickAndPlace(limb,bex,bey,bx,by,bt,bg,bh,hover_distance)
     #pnp.move_to_start()
     pnp._image_processor.open_cam()
@@ -444,7 +444,7 @@ def main():
     ai_row = 7
     ai_col = 7
     rate = rospy.Rate(10)
-    calibration = True
+    calibration = False 
     if calibration:
         print 'calibration...'
         i = 1
@@ -466,7 +466,7 @@ def main():
         print points[0]," ",points[1]
         bt = math.atan((points[0][1]-points[1][1])/(points[0][0]-points[1][0]))
         if bt>math.pi/4: bt = bt - math.pi/2
-        bx = points[1][0] - 0.0125*(math.cos(bt)-math.sin(bt))
+        bx = points[1][0] - 0.0125*(math.cos(bt)-math.sin(bt)) + 0.008
         by = points[1][1] - 0.0125*(math.cos(bt)+math.sin(bt))
         print bx,by,bt
         pnp._board_cfg._bx = bx

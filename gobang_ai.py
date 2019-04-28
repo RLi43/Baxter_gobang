@@ -759,7 +759,7 @@ class gamemain():
         self.col_h = 5
         self.state = 'Q'
         self.myturn = False
-        self.DEPTH = 1
+        self.DEPTH = 2
     def go(self):
         print 'a new game!'
         b = chessboard()

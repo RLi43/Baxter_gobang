@@ -26,7 +26,11 @@ from std_msgs.msg import Char
 
 
 
-# Progress: 1: Waiting 2: Thingking 3: Moving 4: Seaching 5: Picking 6: Moving 7: Placing 8: Moving 11: Pause 12: AI-Win 13: Human-Win
+# Progress: 
+# 1: Waiting 
+# 2: Thingking 3: Moving 4: Seaching 5: Picking 6: Moving 
+# 7: Placing 8: Moving 
+# 11: Pause 12: AI-Win 13: Human-Win
 
 
 # def send_image(path):
@@ -82,7 +86,7 @@ class face(object):
         #self.pub.publish(self.load(name))
         rospy.sleep(1) #
     def go(self):
-        self.show_image('normal')
+        #self.show_image('normal')
         old_state = self.state
         winkle_delay = 3+random.randint(0,100)/50.0
         time_last = time.time()
@@ -90,53 +94,43 @@ class face(object):
         open_eye = True
         open_pos = 'normal'
         while not rospy.is_shutdown():
-            if True or old_state == self.state:
-                # waiting for human
-                if True or (self.state == 1 or self.state == 11 or self.state == 2 or self.state == 4):
-                    #眨眼 
-                    #TODO 做眼神什么的 感觉更智能了呢
-                    if open_eye:
-                        if time.time()-time_last >= winkle_delay:
-                            time_last = time.time()
-                            self.show_image('close')
-                            winkle_delay = 3+random.randint(0,100)/50.0
-                            open_eye = False
-                    else:
-                        if time.time()-time_last >= 0.5:
-                            time_last = time.time()
-                            self.show_image(open_pos)
-                            open_eye = True
-                    if (self.state != 2 and self.state != 4): #Not Thinking
-                        temp_rand = random.randint(0,20)
-                        if temp_rand>17:
-                            open_pos = 'right'
-                        elif temp_rand<3:
-                            open_pos = 'left'
-                        elif temp_rand < 6:
-                            open_pos = 'down_mid'
-                        else:
-                            open_pos = 'normal'
-                    else:
-                        open_pos = 'think'
-                   # print open_pos
+            #眨眼 
+            #print 'open_pos',open_pos
+            #TODO 做眼神什么的 感觉更智能了呢
+            if open_eye:
+                if time.time()-time_last >= winkle_delay:
+                    time_last = time.time()
+                    self.show_image('close')
+                    winkle_delay = 3+random.randint(0,100)/50.0
+                    open_eye = False
             else:
-                old_state = self.state
-                if self.state == 3:
-                    self.show_image('get')
-                elif self.state == 4:
-                    self.show_image('down_left')
-                elif self.state == 6 or self.state == 5 or self.state == 7:
-                    self.show_image('down_mid')
-                elif self.state == 1:
-                    self.show_image('normal')
-                elif self.state == 2:
-                    self.show_image('think')
-                elif self.state == 12:
-                    self.show_image('win')
-                elif self.state == 13:
-                    self.show_image('lose')
+                if time.time()-time_last >= 0.5:
+                    time_last = time.time()
+                    self.show_image(open_pos)
+                    open_eye = True
+            # waiting
+            if self.state == 1 or self.state == 11:
+                temp_rand = random.randint(0,20)
+                if temp_rand>17:
+                    open_pos = 'right'
+                elif temp_rand<3:
+                    open_pos = 'left'
+                elif temp_rand < 6:
+                    open_pos = 'down_mid'
                 else:
-                    self.show_image('normal')
+                    open_pos = 'normal'                    
+            if (self.state == 2 or self.state ==3 or self.state == 4 or self.state == 5): 
+                print 'thingking!!!!'
+                open_pos = 'think'
+            if (self.state == 6 or self.state == 7 ):
+                print 'moving!!!!'
+                open_pos = 'down_mid'
+            if self.state == 12:
+                print 'win!!!!'
+                open_pos = 'win'
+            if self.state == 13:
+                open_pos = 'lose'
+
             rate.sleep()
     #         if args.delay > 0:
     #     rospy.loginfo(
