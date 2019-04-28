@@ -1,7 +1,5 @@
 # Baxter_gobang
-Baxter robot play the gobang with human. #CV#gobang#Baxter
-
-Undo: [image_processor] , image for face
+Baxter robot play the gobang with human. #CV#gobang#Baxter#ROS#Matlab
 
 ## Nodes & Topics
 
@@ -9,8 +7,12 @@ Undo: [image_processor] , image for face
 
 * gobang_ai
 * arm_controller
+** measure the position of chess board
+** grip chesses by the hand camera
+** place chess
 * image_processor
 * face - show picture on xdisplay
+* head - 
 
 ### Topics
 
