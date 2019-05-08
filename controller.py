@@ -77,6 +77,7 @@ class image_converter:
         self._pick_bias = (0.025,0.023) # the gripper is not at the center of the camera
         # 颜色在HSV空间中的上下阈值 蓝色：[90,130,30],[130,200,150]v 148 128
         self._color_dict = {'blue':[[70,80,30],[180,255,255]],'purple':[[115,0,0],[255,255,255]]} #125
+        self.image_updated = False
     def open_cam(self,on = True):
         #打开相机
         if on:
@@ -90,6 +91,7 @@ class image_converter:
     def _image_callback(self, img_data):
         try:
             self._original_image = CvBridge().imgmsg_to_cv2(img_data, "bgr8") #从ros image转换到openCV的图像格式
+            self.image_updated = True
         except CvBridgeError as e:
             print e
 
@@ -99,24 +101,24 @@ class image_converter:
     # 提取图像中的蓝色部分-->
     # 腐蚀与膨胀去除噪点-->转换为灰度图像-->二值化
     def _image_process(self, color='blue',best_is_nearest = True): #or biggest
-        # Convert BGR to HSV
+        # wait for get new image
+        while not self.image_updated:
+            pass
         original = self._original_image.copy()
+        self.image_updated = False
+
+        # image process to get the position of chess
         hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)    #转换到HSV颜色空间 
         lower_color = np.array(self._color_dict[color][0])
         upper_color = np.array(self._color_dict[color][1])
-        # Threshold the HSV image to get only blue colors
-        mask = cv2.inRange(hsv, lower_color, upper_color)   #在hsv颜色空间中获取图像中的颜色部分，用inRange制作掩膜，即该部分为感兴趣的部分 
-        res = cv2.bitwise_and(original, original, mask= mask)  #原图像与掩膜进行与操作，则只剩下掩膜部分
-        #开操作
-        # kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8)) #
-        # open_img = cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (8, 8)) #获得构造元素
+        mask = cv2.inRange(hsv, lower_color, upper_color)  # get color roi
+        res = cv2.bitwise_and(original, original, mask= mask) 
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (8, 8)) 
         open_img = cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel)
-        # 二值化 
         gray_img = cv2.cvtColor(open_img, cv2.COLOR_BGR2GRAY)
         ret, bin_img = cv2.threshold(gray_img, 10, 255, cv2.THRESH_BINARY)
-
         contours, hierarchy = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
         if len(contours)<1: # 没有找到物体
             return [self._MAX_SCALE,self._MAX_SCALE,200]
         [bx,by,bw,bh,ba]=[0]*5

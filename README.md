@@ -52,3 +52,12 @@ mostly from https://github.com/skywind3000/gobang, modified it to fit ROS
 baxter_tool
 ## Pictures
 https://cloud.tsinghua.edu.cn/d/38ad384fa774416fab5a/
+
+## Next
+
+* when to deal with the board to get information?
+* ik needs to be modify. not just thrust into the board…
+
+## Problems
+
+* Internet delay causes gripping process unstable – it will keep move as the camera photo is not updated
