@@ -60,4 +60,4 @@ https://cloud.tsinghua.edu.cn/d/38ad384fa774416fab5a/
 
 ## Problems
 
-* Internet delay causes gripping process unstable – it will keep move as the camera photo is not updated
+* Internet delay causes gripping process unstable – it will keep move as the camera photo is not updated - use Ethernet will make sense.
