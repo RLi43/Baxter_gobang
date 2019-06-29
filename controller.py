@@ -101,11 +101,11 @@ class image_converter:
     # 提取图像中的蓝色部分-->
     # 腐蚀与膨胀去除噪点-->转换为灰度图像-->二值化
     def _image_process(self, color='blue',best_is_nearest = True): #or biggest
+        self.image_updated = False
         # wait for get new image
         while not self.image_updated:
             pass
         original = self._original_image.copy()
-        self.image_updated = False
 
         # image process to get the position of chess
         hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)    #转换到HSV颜色空间 
@@ -382,14 +382,14 @@ class PickAndPlace(object):
                 # 根据移动距离等待
                 sleep_time = math.sqrt(bias_x^2+bias_y^2)*40 #TODO 这个比例合适吗？
                 self._servo_to_pose(poses,sleep_time) 
-                rospy.sleep(0.1)
-                # rospy.sleep(sleep_time*1.01) # wait images keep still
+                rospy.sleep(0.1) # wait images keep still
+                # rospy.sleep(sleep_time*1.01) 
                 [bias_x,bias_y,bias_angle] = self._image_processor._image_process()
                 print bias_x,bias_y,bias_angle
             if rospy.is_shutdown():
                 return 0
         #self._image_processor.open_cam(False)
-        
+
     def pick(self):     
         #self.move_to_start()  
         self.finding()
